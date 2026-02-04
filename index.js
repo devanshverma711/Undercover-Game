@@ -5,10 +5,25 @@ const { Server } = require("socket.io");
 const cors = require("cors");
 
 const app = express();
-app.use(cors());
+app.use(
+  cors({
+    origin: "https://undercover-frontend.vercel.app",
+    credentials: true,
+  })
+);
+
 
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
+const io = new Server(server, {
+  cors: {
+    origin: [
+      "https://undercover-frontend.vercel.app"
+    ],
+    methods: ["GET", "POST"],
+    credentials: true
+  },
+});
+
 
 const rooms = {};
 
