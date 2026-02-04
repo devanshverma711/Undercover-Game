@@ -14,15 +14,19 @@ app.use(
 
 
 const server = http.createServer(app);
+
+  
+    
+    
+   
 const io = new Server(server, {
   cors: {
-    origin: [
-      "https://undercover-frontend.vercel.app"
-    ],
+    origin: "*",
     methods: ["GET", "POST"],
-    credentials: true
   },
+  transports: ["polling"],
 });
+
 
 
 const rooms = {};
