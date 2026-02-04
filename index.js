@@ -1,33 +1,27 @@
-
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 const cors = require("cors");
 
 const app = express();
+
+/* 🔥 IMPORTANT: allow polling properly */
 app.use(
   cors({
-    origin: "https://undercover-frontend.vercel.app",
-    credentials: true,
+    origin: "*",
+    methods: ["GET", "POST"],
   })
 );
 
-
 const server = http.createServer(app);
 
-  
-    
-    
-   
 const io = new Server(server, {
   cors: {
     origin: "*",
     methods: ["GET", "POST"],
   },
-  transports: ["polling"],
+  transports: ["polling"], // REQUIRED on Render free tier
 });
-
-
 
 const rooms = {};
 
@@ -302,8 +296,9 @@ function determineWinner(roomCode) {
 }
 
 //server.listen(3000, () => console.log("Backend running on http://localhost:3000"));
+
 const PORT = process.env.PORT || 3000;
 
-server.listen(PORT, () =>
-  console.log("Backend running on port", PORT)
-);
+server.listen(PORT, "0.0.0.0", () => {
+  console.log("Backend running on port", PORT);
+});
