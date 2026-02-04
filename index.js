@@ -65,7 +65,7 @@ io.on("connection", (socket) => {
   socket.on("join-room", ({ room, name }) => {
     socket.join(room);
     socket.roomCode = room;
-
+    console.log("JOIN:", room, name);
     if (!rooms[room]) {
       rooms[room] = {
         players: [],
