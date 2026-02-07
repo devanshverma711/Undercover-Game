@@ -90,7 +90,11 @@ io.on("connection", (socket) => {
         message: ""
       };
     }
-
+    if (rooms[room].phase !== "lobby") {
+      socket.emit("error", "Game in progress. You will join next round.");
+      socket.leave(room);
+      return;
+    }
     // add player (no duplicates). If same name reconnects, keep score if present
     if (!rooms[room].players.some(p => p.id === socket.id)) {
       // if a player with same name exists (left earlier), we keep their score and update id
@@ -147,7 +151,12 @@ io.on("connection", (socket) => {
   socket.on("start-voting", (roomCode) => {
     const room = rooms[roomCode];
     if (!room) return;
-
+    const aliveCount = room.players.filter(p => p.alive).length;
+    if (aliveCount <= 2) {
+      checkEndGame(room);
+      io.to(roomCode).emit("state", room);
+      return;
+    }
     room.phase = "voting";
     room.votesByPlayer = {};
     room.voteCount = {};
@@ -158,7 +167,8 @@ io.on("connection", (socket) => {
 
   // VOTE - server enforces one vote per socket, no self-vote
   socket.on("vote", ({ room, votedName }) => {
-    const game = rooms[room];
+    const roomCode = socket.roomCode;
+    const game = rooms[roomCode];
     if (!game || game.phase !== "voting") return;
 
     const voter = game.players.find(p => p.id === socket.id);
@@ -169,9 +179,9 @@ io.on("connection", (socket) => {
     game.votesByPlayer[socket.id] = votedName;
     game.voteCount[votedName] = (game.voteCount[votedName] || 0) + 1;
 
-    io.to(room).emit("votes", game.voteCount);
+    io.to(roomCode).emit("votes", game.voteCount);
 
-    checkVotingComplete(room);
+    checkVotingComplete(roomCode);
   });
 
   // PLAY AGAIN - host resets the whole game to lobby but keeps scores
@@ -231,56 +241,78 @@ function checkVotingComplete(roomCode) {
 }
 
 function resolveVoting(roomCode) {
-  const game = rooms[roomCode];
-  if (!game) return;
+    const game = rooms[roomCode];
+    if (!game) return;
 
-  const entries = Object.entries(game.voteCount).sort((a, b) => b[1] - a[1]);
-  if (entries.length === 0) {
-    // no votes (edge case)
-    game.phase = "playing";
-    game.message = "No votes cast. Discussion continues.";
-    io.to(roomCode).emit("state", game);
-    return;
+    const entries = Object.entries(game.voteCount).sort((a, b) => b[1] - a[1]);
+    if (entries.length === 0) {
+      // no votes (edge case)
+      game.phase = "playing";
+      game.message = "No votes cast. Discussion continues.";
+      io.to(roomCode).emit("state", game);
+      return;
+    }
+
+    const [topName, topVotes] = entries[0];
+    const secondVotes = entries[1]?.[1] || 0;
+
+    // tie or no majority -> replay
+    if (topVotes === secondVotes) {
+      game.phase = "playing";
+      game.message = "🤝 No majority. No one was eliminated.";
+      game.votesByPlayer = {};
+      game.voteCount = {};
+      io.to(roomCode).emit("state", game);
+      return;
+    }
+    // eliminate topName
+    const eliminatedPlayer = game.players.find(p => p.name === topName);
+    if (!eliminatedPlayer) return;
+    if (eliminatedPlayer) eliminatedPlayer.alive = false;
+    
+    if (checkEndGame(game)) {
+      io.to(roomCode).emit("state", game);
+      return;
+    }
+    // scoring & messages
+    if (eliminatedPlayer.role === "undercover") {
+      // undercover caught -> all alive civilians +3
+      game.players
+        .filter(p => p.role === "civilian" && p.alive)
+        .forEach(p => p.score = (p.score || 0) + 3);
+
+      game.phase = "ended";
+      game.message = `🎉 ${topName} was the UNDERCOVER! Civilians win!`;
+      io.to(roomCode).emit("state", game);
+      return;
+    } else {
+      // civilian eliminated -> undercover gets +2
+      const undercover = game.players.find(p => p.role === "undercover");
+      if (undercover) undercover.score = (undercover.score || 0) + 2;
+
+      game.message = `☠️ ${topName} was a CIVILIAN and eliminated.`;
+      // now check if game ends (undercover win condition) or continue
+      determineWinner(roomCode);
+      return;
+    }
+}
+
+function checkEndGame(game) {
+  const alivePlayers = game.players.filter(p => p.alive);
+  const aliveUndercover = alivePlayers.filter(p => p.role === "undercover");
+
+  if (alivePlayers.length <= 2) {
+    if (aliveUndercover.length > 0) {
+      game.phase = "ended";
+      game.message = "🕵️ Undercover wins!";
+    } else {
+      game.phase = "ended";
+      game.message = "🎉 Civilians win!";
+    }
+    return true;
   }
 
-  const [topName, topVotes] = entries[0];
-  const secondVotes = entries[1]?.[1] || 0;
-
-  // tie or no majority -> replay
-  if (topVotes === secondVotes) {
-    game.phase = "playing";
-    game.message = "🤝 No majority. No one was eliminated.";
-    game.votesByPlayer = {};
-    game.voteCount = {};
-    io.to(roomCode).emit("state", game);
-    return;
-  }
-
-  // eliminate topName
-  const eliminatedPlayer = game.players.find(p => p.name === topName);
-  if (eliminatedPlayer) eliminatedPlayer.alive = false;
-
-  // scoring & messages
-  if (eliminatedPlayer.role === "undercover") {
-    // undercover caught -> all alive civilians +3
-    game.players
-      .filter(p => p.role === "civilian" && p.alive)
-      .forEach(p => p.score = (p.score || 0) + 3);
-
-    game.phase = "ended";
-    game.message = `🎉 ${topName} was the UNDERCOVER! Civilians win!`;
-    io.to(roomCode).emit("state", game);
-    return;
-  } else {
-    // civilian eliminated -> undercover gets +2
-    const undercover = game.players.find(p => p.role === "undercover");
-    if (undercover) undercover.score = (undercover.score || 0) + 2;
-
-    game.message = `☠️ ${topName} was a CIVILIAN and eliminated.`;
-    // now check if game ends (undercover win condition) or continue
-    determineWinner(roomCode);
-    return;
-  }
+  return false;
 }
 
 function determineWinner(roomCode) {
