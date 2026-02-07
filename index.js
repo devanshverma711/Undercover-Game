@@ -31,15 +31,25 @@ const WORD_PAIRS = [
   ["Coffee", "Tea"],
   ["Dog", "Cat"],
   ["Summer", "Winter"],
+  ["Island", ""],
+  ["Desert", ""],
+  ["Mountain", ""],
   ["Netflix", "Disney"],
   ["Google", "Apple"],
   ["Messi", "Ronaldo"],
+   ["Dubai", ""],
+  ["Tokyo", ""],
+  ["Rome", ""],
   ["YouTube", "TikTok"],
   ["Facebook", "Instagram"],
   ["WhatsApp", "Telegram"],
   ["Amazon", "Walmart"],
+  ["Beach", ""],
+  ["Forest", ""],
   ["Netflix", "Disney"],
   ["iPhone", "Android"],
+  ["London", ""],
+  ["Berlin", ""],
   ["Google", "Apple"],
   ["Pizza", "Burger"],
   ["Coffee", "Tea"],
@@ -47,13 +57,19 @@ const WORD_PAIRS = [
   ["Lion", "Tiger"],
   ["Messi", "Ronaldo"],
   ["Batman", "Superman"],
+   ["Pyramids", ""],
+  ["TajMahal", ""],
   ["Train", "Airplane"],
   ["Summer", "Winter"],
   ["Summer", "Winter"],
+   ["Volcano", ""],
   ["Pizza", "Burger"],
   ["Dog", "Cat"],
   ["Coffee", "Tea"],
-  ["Apple", "Android"]
+  ["Apple", "Android"],
+  ["Paris", ""],
+  
+  ["Sydney", ""],
 ];
 
 io.on("connection", (socket) => {
@@ -67,6 +83,7 @@ io.on("connection", (socket) => {
     if (!rooms[room]) {
       rooms[room] = {
         players: [],
+        hostId: socket.id,
         phase: "lobby",
         votesByPlayer: {},
         voteCount: {},
@@ -185,7 +202,7 @@ io.on("connection", (socket) => {
   function leaveRoom() {
     const roomCode = socket.roomCode;
     if (!roomCode || !rooms[roomCode]) return;
-
+    const room = rooms[roomCode];
     rooms[roomCode].players = rooms[roomCode].players.filter(p => p.id !== socket.id);
 
     // if no players left, delete room
@@ -193,7 +210,10 @@ io.on("connection", (socket) => {
       delete rooms[roomCode];
       return;
     }
-
+    if (room.hostId === socket.id) {
+      room.hostId = room.players[0].id; // next player becomes host
+      room.message = `👑 Host left. ${room.players[0].name} is now the host.`;
+    }
     io.to(roomCode).emit("state", rooms[roomCode]);
   }
 });
