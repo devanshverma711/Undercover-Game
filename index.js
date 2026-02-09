@@ -26,50 +26,78 @@ const io = new Server(server, {
 const rooms = {};
 
 const WORD_PAIRS = [
-  ["Apple", "Android"],
-  ["Pizza", "Burger"],
-  ["Coffee", "Tea"],
+  ["Apple", "Pie"],
+  ["Pizza", ""],
+  ["Coffee", ""],
   ["Dog", "Cat"],
-  ["Summer", "Winter"],
+  ["Summer", ""],
   ["Island", ""],
   ["Desert", ""],
   ["Mountain", ""],
   ["Netflix", "Disney"],
   ["Google", "Apple"],
-  ["Messi", "Ronaldo"],
+  ["Messi", "Chetri"],
    ["Dubai", ""],
   ["Tokyo", ""],
   ["Rome", ""],
   ["YouTube", "TikTok"],
   ["Facebook", "Instagram"],
   ["WhatsApp", "Telegram"],
-  ["Amazon", "Walmart"],
+  ["Amazon", "Dmart"],
   ["Beach", ""],
   ["Forest", ""],
-  ["Netflix", "Disney"],
-  ["iPhone", "Android"],
+  ["Pogo", "HotStar"],
+  ["Samsung", "Android"],
   ["London", ""],
   ["Berlin", ""],
-  ["Google", "Apple"],
+  ["Google", "Internet"],
   ["Pizza", "Burger"],
   ["Coffee", "Tea"],
   ["Dog", "Cat"],
   ["Lion", "Tiger"],
-  ["Messi", "Ronaldo"],
+  ["Messi", "Argentina"],
   ["Batman", "Superman"],
-   ["Pyramids", ""],
+  ["Pyramids", ""],
   ["TajMahal", ""],
-  ["Train", "Airplane"],
-  ["Summer", "Winter"],
-  ["Summer", "Winter"],
+  ["Train", "Engine"],
+  ["Summer", "Hot"],
+  ["Pepsi", "Fizz"],
    ["Volcano", ""],
-  ["Pizza", "Burger"],
+  ["KFC", ""],
   ["Dog", "Cat"],
-  ["Coffee", "Tea"],
+  ["Coffee", "Expresso"],
   ["Apple", "Android"],
   ["Paris", ""],
-  
   ["Sydney", ""],
+  ["Snow",""],
+  ["Waffle",""],
+  ["Speaker",""],
+  ["Trump",""],
+  ["Ronaldo",""],
+  ["Group",""],
+  ["Choco","Chips"],
+  ["Camping",""],
+  ["Concert",""],
+  ["Undercover",""],
+  ["FIFA",""],
+  ["Tax",""],
+  ["Income",""],
+  ["Deer",""],
+  ["Excel",""],
+  ["Notes",""],
+  ["Rose","Valentine"],
+  ["Wine","Blood"],
+  ["Salary", "Bonus"],
+  ["Tax", "GST"],
+  ["Loan", "Debt"],
+  ["Profit", "Revenue"],
+  ["Client", "Customer"],
+  ["Team", "Group"],
+  ["Roast", ""],
+  ["Meme", ""],
+  ["Hangover", ""],
+  ["Crush", ""],  
+  ["Selfie", "Photo"],  
 ];
 
 io.on("connection", (socket) => {
@@ -91,7 +119,7 @@ io.on("connection", (socket) => {
       };
     }
     if (rooms[room].phase !== "lobby") {
-      socket.emit("error", "Game in progress. You will join next round.");
+      socket.emit("game-error", "Game in progress. You will join next round.");
       socket.leave(room);
       return;
     }
@@ -117,12 +145,12 @@ io.on("connection", (socket) => {
   });
 
   // START GAME (assign roles & words privately) — keep scores intact
-  socket.on("startGame", () => {
+  /*socket.on("startGame", () => {
     const room = rooms[socket.roomCode];
     if (!room) return;
 
     if (room.players.length < 3) {
-      socket.emit("error", "Minimum 3 players required");
+      socket.emit("game-error", "Minimum 3 players required");
       return;
     }
 
@@ -146,6 +174,70 @@ io.on("connection", (socket) => {
 
     io.to(socket.roomCode).emit("state", room);
   });
+  */
+ socket.on("startGame", ({ mode = "normal" } = {}) => {
+  const room = rooms[socket.roomCode];
+  if (!room) return;
+
+  if (room.players.length < 3) {
+    socket.emit("game-error", "Minimum 3 players required");
+    return;
+  }
+
+  room.mode = mode;
+
+  const [civilianWord, undercoverWord] =
+    WORD_PAIRS[Math.floor(Math.random() * WORD_PAIRS.length)];
+
+  const undercoverIndex = Math.floor(Math.random() * room.players.length);
+
+  room.players = room.players.map((p, idx) => {
+    const isUndercover = idx === undercoverIndex;
+
+    // 🧠 TRUE ROLE (server-only)
+    const trueRole = isUndercover ? "undercover" : "civilian";
+
+    // 🎭 WHAT PLAYER SEES
+    let visibleRole = "civilian";
+    let word = civilianWord;
+
+    if (isUndercover) {
+      if (!undercoverWord) {
+        // Case: ["Pizza", ""]
+        visibleRole = "undercover";
+        word = null;
+      } else if (room.mode === "normal") {
+        // Case: normal mode
+        visibleRole = "undercover";
+        word = undercoverWord;
+      } else if (room.mode === "hard") {
+        // 🔥 HARD MODE DECEPTION
+        visibleRole = "civilian";
+        word = undercoverWord;
+      }
+    }
+
+    io.to(p.id).emit("role", { role: visibleRole, word });
+
+    return {
+      ...p,
+      role: trueRole, // store truth
+      alive: true,
+      score: p.score ?? 0,
+    };
+  });
+
+  room.phase = "playing";
+  room.votesByPlayer = {};
+  room.voteCount = {};
+  room.message =
+    room.mode === "hard"
+      ? "🔥 Hard Mode! Trust no one."
+      : "🎮 Game started! Discuss carefully.";
+
+  io.to(socket.roomCode).emit("state", room);
+});
+
 
   // START VOTING - host triggers this
   socket.on("start-voting", (roomCode) => {
@@ -270,7 +362,7 @@ function resolveVoting(roomCode) {
     if (!eliminatedPlayer) return;
     if (eliminatedPlayer) eliminatedPlayer.alive = false;
     
-    if (checkEndGame(game)) {
+    if (checkEndGame(room)) {
       io.to(roomCode).emit("state", game);
       return;
     }
@@ -297,7 +389,7 @@ function resolveVoting(roomCode) {
     }
 }
 
-function checkEndGame(game) {
+function checkEndGame(room) {
   const alivePlayers = game.players.filter(p => p.alive);
   const aliveUndercover = alivePlayers.filter(p => p.role === "undercover");
 
