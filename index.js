@@ -255,8 +255,8 @@ io.on("connection", (socket) => {
     if (!room) return;
     const aliveCount = room.players.filter(p => p.alive && p.connected !== false).length;
     if (aliveCount <= 2) {
-      checkEndGame(room);
-      io.to(roomCode).emit("state", room);
+      checkEndGame(game);
+      io.to(roomCode).emit("state", game);
       return;
     }
     room.phase = "voting";
@@ -390,7 +390,7 @@ function resolveVoting(roomCode) {
     if (!eliminatedPlayer) return;
     if (eliminatedPlayer) eliminatedPlayer.alive = false;
     
-    if (checkEndGame(room)) {
+    if (checkEndGame(game)) {
       io.to(roomCode).emit("state", game);
       return;
     }
@@ -417,7 +417,27 @@ function resolveVoting(roomCode) {
     }
 }
 
-function checkEndGame(room) {
+/*function checkEndGame(room) {
+  const alivePlayers = game.players.filter(p => p.alive);
+  const aliveUndercover = alivePlayers.filter(p => p.role === "undercover");
+
+  if (alivePlayers.length <= 2) {
+    if (aliveUndercover.length > 0) {
+      game.phase = "ended";
+      game.message = "🕵️ Undercover wins!";
+    } else {
+      game.phase = "ended";
+      game.message = "🎉 Civilians win!";
+    }
+    return true;
+  }
+
+  return false;
+}*/
+
+function checkEndGame(game) {
+  if (!game) return false;
+
   const alivePlayers = game.players.filter(p => p.alive);
   const aliveUndercover = alivePlayers.filter(p => p.role === "undercover");
 
@@ -434,6 +454,7 @@ function checkEndGame(room) {
 
   return false;
 }
+
 
 function determineWinner(roomCode) {
   const game = rooms[roomCode];
