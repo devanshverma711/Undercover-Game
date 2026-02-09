@@ -255,7 +255,7 @@ io.on("connection", (socket) => {
     if (!room) return;
     const aliveCount = room.players.filter(p => p.alive && p.connected !== false).length;
     if (aliveCount <= 2) {
-      checkEndGame(game);
+      checkEndGame(room);
       io.to(roomCode).emit("state", room);
       return;
     }
@@ -390,7 +390,7 @@ function resolveVoting(roomCode) {
     if (!eliminatedPlayer) return;
     if (eliminatedPlayer) eliminatedPlayer.alive = false;
     
-    if (checkEndGame(game)) {
+    if (checkEndGame(room)) {
       io.to(roomCode).emit("state", game);
       return;
     }
@@ -417,7 +417,7 @@ function resolveVoting(roomCode) {
     }
 }
 
-function checkEndGame(game) {
+function checkEndGame(room) {
   const alivePlayers = game.players.filter(p => p.alive);
   const aliveUndercover = alivePlayers.filter(p => p.role === "undercover");
 
