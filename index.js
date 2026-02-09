@@ -233,7 +233,7 @@ io.on("connection", (socket) => {
       ...p,
       role: trueRole, // store truth
       alive: true,
-      score: p.score ?? 0,
+      //score: p.score ?? 0,
     };
   });
 
@@ -299,7 +299,7 @@ io.on("connection", (socket) => {
       ...p,
       alive: true,
       role: null,
-      score: p.score ?? 0
+    //  score: p.score ?? 0
     }));
 
     room.phase = "lobby";
