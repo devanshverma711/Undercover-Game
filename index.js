@@ -98,6 +98,8 @@ const WORD_PAIRS = [
   ["Hangover", ""],
   ["Crush", ""],  
   ["Selfie", "Photo"],  
+  ["Rose","Red"],
+  ["English","England"]
 ];
 
 io.on("connection", (socket) => {
@@ -118,6 +120,14 @@ io.on("connection", (socket) => {
         message: ""
       };
     }
+    const existingByName = rooms[room].players.find(p => p.name === name);
+    if (existingByName) {
+      existingByName.id = socket.id;
+      existingByName.connected = true;
+      socket.roomCode = room;
+      io.to(room).emit("state", rooms[room]);
+      return;
+    }
     if (rooms[room].phase !== "lobby") {
       socket.emit("game-error", "Game in progress. You will join next round.");
       socket.leave(room);
@@ -126,7 +136,6 @@ io.on("connection", (socket) => {
     // add player (no duplicates). If same name reconnects, keep score if present
     if (!rooms[room].players.some(p => p.id === socket.id)) {
       // if a player with same name exists (left earlier), we keep their score and update id
-      const existingByName = rooms[room].players.find(p => p.name === name);
       if (existingByName && !rooms[room].players.some(p => p.id === socket.id)) {
         // replace the old entry's id (this handles rejoin by same player)
         existingByName.id = socket.id;
@@ -136,7 +145,8 @@ io.on("connection", (socket) => {
           name,
           alive: true,
           role: null,
-          score: 0
+          score: 0,
+          connected: true
         });
       }
     }
@@ -241,11 +251,11 @@ io.on("connection", (socket) => {
 
   // START VOTING - host triggers this
   socket.on("start-voting", (roomCode) => {
-    const room = rooms[roomCode];
+    const room = rooms[roomCode]; 
     if (!room) return;
-    const aliveCount = room.players.filter(p => p.alive).length;
+    const aliveCount = room.players.filter(p => p.alive && p.connected !== false).length;
     if (aliveCount <= 2) {
-      checkEndGame(room);
+      checkEndGame(game);
       io.to(roomCode).emit("state", room);
       return;
     }
@@ -262,6 +272,9 @@ io.on("connection", (socket) => {
     const roomCode = socket.roomCode;
     const game = rooms[roomCode];
     if (!game || game.phase !== "voting") return;
+    if (!game.players.find(p => p.id === socket.id && p.connected !== false)) {
+      return;
+    }
 
     const voter = game.players.find(p => p.id === socket.id);
     if (!voter || !voter.alive) return;
@@ -299,7 +312,19 @@ io.on("connection", (socket) => {
 
   // LEAVE ROOM / DISCONNECT
   socket.on("leaveRoom", () => leaveRoom());
-  socket.on("disconnect", () => leaveRoom());
+  socket.on("disconnect", () => {
+    const roomCode = socket.roomCode;
+    if (!roomCode || !rooms[roomCode]) return;
+
+    const room = rooms[roomCode];
+    const player = room.players.find(p => p.id === socket.id);
+    if (player) {
+      player.connected = false;
+      room.message = `⚠️ ${player.name} disconnected. Waiting to reconnect...`;
+      io.to(roomCode).emit("state", room);
+    }
+  });
+
 
   function leaveRoom() {
     const roomCode = socket.roomCode;
@@ -324,10 +349,13 @@ io.on("connection", (socket) => {
 function checkVotingComplete(roomCode) {
   const game = rooms[roomCode];
   if (!game) return;
-  const aliveCount = game.players.filter(p => p.alive).length;
+  //const aliveCount = game.players.filter(p => p.alive).length;
   const votesCast = Object.keys(game.votesByPlayer).length;
+  const aliveAndConnected = game.players.filter(
+      p => p.alive && p.connected !== false
+    ).length;
 
-  if (votesCast === aliveCount) {
+  if (votesCast === aliveAndConnected) {
     resolveVoting(roomCode);
   }
 }
@@ -362,7 +390,7 @@ function resolveVoting(roomCode) {
     if (!eliminatedPlayer) return;
     if (eliminatedPlayer) eliminatedPlayer.alive = false;
     
-    if (checkEndGame(room)) {
+    if (checkEndGame(game)) {
       io.to(roomCode).emit("state", game);
       return;
     }
@@ -389,7 +417,7 @@ function resolveVoting(roomCode) {
     }
 }
 
-function checkEndGame(room) {
+function checkEndGame(game) {
   const alivePlayers = game.players.filter(p => p.alive);
   const aliveUndercover = alivePlayers.filter(p => p.role === "undercover");
 
