@@ -154,37 +154,6 @@ io.on("connection", (socket) => {
     io.to(room).emit("state", rooms[room]);
   });
 
-  // START GAME (assign roles & words privately) — keep scores intact
-  /*socket.on("startGame", () => {
-    const room = rooms[socket.roomCode];
-    if (!room) return;
-
-    if (room.players.length < 3) {
-      socket.emit("game-error", "Minimum 3 players required");
-      return;
-    }
-
-    const [civilianWord, undercoverWord] =
-      WORD_PAIRS[Math.floor(Math.random() * WORD_PAIRS.length)];
-
-    const undercoverIndex = Math.floor(Math.random() * room.players.length);
-
-    // assign roles; preserve score property
-    room.players = room.players.map((p, idx) => {
-      const role = idx === undercoverIndex ? "undercover" : "civilian";
-      const word = role === "undercover" ? undercoverWord : civilianWord;
-      io.to(p.id).emit("role", { role, word });
-      return { ...p, role, alive: true, score: p.score ?? 0 };
-    });
-
-    room.phase = "playing";
-    room.votesByPlayer = {};
-    room.voteCount = {};
-    room.message = "🎮 Game started! Discuss carefully.";
-
-    io.to(socket.roomCode).emit("state", room);
-  });
-  */
  socket.on("startGame", ({ mode = "normal" } = {}) => {
   const room = rooms[socket.roomCode];
   if (!room) return;
@@ -360,7 +329,7 @@ function checkVotingComplete(roomCode) {
   }
 }
 
-function resolveVoting(roomCode) {
+/*function resolveVoting(roomCode) {
     const game = rooms[roomCode];
     if (!game) return;
 
@@ -416,24 +385,72 @@ function resolveVoting(roomCode) {
       return;
     }
 }
+*/
+function resolveVoting(roomCode) {
+  const game = rooms[roomCode];
+  if (!game) return;
 
-/*function checkEndGame(room) {
-  const alivePlayers = game.players.filter(p => p.alive);
-  const aliveUndercover = alivePlayers.filter(p => p.role === "undercover");
-
-  if (alivePlayers.length <= 2) {
-    if (aliveUndercover.length > 0) {
-      game.phase = "ended";
-      game.message = "🕵️ Undercover wins!";
-    } else {
-      game.phase = "ended";
-      game.message = "🎉 Civilians win!";
-    }
-    return true;
+  const entries = Object.entries(game.voteCount).sort((a, b) => b[1] - a[1]);
+  if (entries.length === 0) {
+    game.phase = "playing";
+    game.message = "No votes cast. Discussion continues.";
+    io.to(roomCode).emit("state", game);
+    return;
   }
 
-  return false;
-}*/
+  const [topName, topVotes] = entries[0];
+  const secondVotes = entries[1]?.[1] || 0;
+
+  if (topVotes === secondVotes) {
+    game.phase = "playing";
+    game.message = "🤝 No majority. No one was eliminated.";
+    game.votesByPlayer = {};
+    game.voteCount = {};
+    io.to(roomCode).emit("state", game);
+    return;
+  }
+
+  const eliminatedPlayer = game.players.find(p => p.name === topName);
+  if (!eliminatedPlayer) return;
+
+  eliminatedPlayer.alive = false;
+
+  // 🎯 SCORING FIRST
+  if (eliminatedPlayer.role === "undercover") {
+    game.players
+      .filter(p => p.role === "civilian" && p.alive)
+      .forEach(p => p.score = (p.score ?? 0) + 3);
+
+    game.message = `🎉 ${topName} was the UNDERCOVER! Civilians gain +3`;
+  } else {
+    const undercover = game.players.find(p => p.role === "undercover");
+    if (undercover) undercover.score = (undercover.score ?? 0) + 2;
+
+    game.message = `☠️ ${topName} was a CIVILIAN! Undercover gains +2`;
+  }
+
+  // 🔍 THEN check if game ends
+  const alive = game.players.filter(p => p.alive);
+  const undercoverAlive = alive.some(p => p.role === "undercover");
+
+  if (!undercoverAlive) {
+    game.phase = "ended";
+    game.message += " | Civilians win!";
+  } else if (alive.length <= 2) {
+    const undercover = game.players.find(p => p.role === "undercover");
+    if (undercover) undercover.score = (undercover.score ?? 0) + 5;
+
+    game.phase = "ended";
+    game.message += " | Undercover wins +5!";
+  } else {
+    game.phase = "playing";
+    game.votesByPlayer = {};
+    game.voteCount = {};
+  }
+
+  io.to(roomCode).emit("state", game);
+}
+
 
 function checkEndGame(game) {
   if (!game) return false;
@@ -487,8 +504,6 @@ function determineWinner(roomCode) {
   game.voteCount = {};
   io.to(roomCode).emit("state", game);
 }
-
-//server.listen(3000, () => console.log("Backend running on http://localhost:3000"));
 
 const PORT = process.env.PORT || 3000;
 
