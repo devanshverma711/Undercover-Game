@@ -233,7 +233,7 @@ io.on("connection", (socket) => {
       ...p,
       role: trueRole, // store truth
       alive: true,
-      //score: p.score ?? 0,
+      score: p.score ?? 0,
     };
   });
 
@@ -255,8 +255,8 @@ io.on("connection", (socket) => {
     if (!room) return;
     const aliveCount = room.players.filter(p => p.alive && p.connected !== false).length;
     if (aliveCount <= 2) {
-      checkEndGame(game);
-      io.to(roomCode).emit("state", game);
+      checkEndGame(room);
+      io.to(roomCode).emit("state", room);
       return;
     }
     room.phase = "voting";
@@ -299,7 +299,7 @@ io.on("connection", (socket) => {
       ...p,
       alive: true,
       role: null,
-    //  score: p.score ?? 0
+      score: p.score ?? 0
     }));
 
     room.phase = "lobby";
