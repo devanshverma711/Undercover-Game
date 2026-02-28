@@ -36,27 +36,39 @@ function shuffle(array) {
 const WORD_PAIRS = [
   ["Apple", "Pie"],
   ["Pizza", ""],
+  ["Paytm", "PhonePe"],
   ["Coffee", ""],
-  ["Dog", "Cat"],
+  ["Shahrukh", "Salman"],
   ["Summer", ""],
+  ["Fan", "AC"],
   ["Island", ""],
+  ["Heaven", "Hell"],
   ["Desert", ""],
   ["Mountain", ""],
   ["Netflix", "Disney"],
   ["Google", "Apple"],
+  ["Podcast", ""],
   ["Messi", "Chetri"],
-   ["Dubai", ""],
+  ["Dubai", ""],
+  ["Diwali", "Holi"],
   ["Tokyo", ""],
+  ["Petrol", "Diesel"],
+  ["Passport", "Visa"],
   ["Rome", ""],
   ["YouTube", "TikTok"],
+  ["GoldDigger", ""],
   ["Facebook", "Instagram"],
+  ["Love",""],
   ["WhatsApp", "Telegram"],
   ["Amazon", "Dmart"],
   ["Beach", ""],
+  ["GPay","Paytm"],
   ["Forest", ""],
   ["Pogo", "HotStar"],
+  ["Visa","Passport" ],
   ["Samsung", "Android"],
   ["London", ""],
+  ["Haldi", "Mehendi"],
   ["Berlin", ""],
   ["Google", "Internet"],
   ["Pizza", "Burger"],
@@ -66,11 +78,13 @@ const WORD_PAIRS = [
   ["Messi", "Argentina"],
   ["Batman", "Superman"],
   ["Pyramids", ""],
+  ["Virat", "Rohit"],
   ["TajMahal", ""],
   ["Train", "Engine"],
   ["Summer", "Hot"],
   ["Pepsi", "Fizz"],
-   ["Volcano", ""],
+  ["Volcano", ""],
+  ["Superman","Batman"],
   ["KFC", ""],
   ["Dog", "Cat"],
   ["Coffee", "Expresso"],
@@ -81,17 +95,23 @@ const WORD_PAIRS = [
   ["Waffle",""],
   ["Speaker",""],
   ["Trump",""],
+  ["Judge", "Lawyer"],
   ["Ronaldo",""],
   ["Group",""],
   ["Choco","Chips"],
   ["Camping",""],
   ["Concert",""],
   ["Undercover",""],
+  ["Covid","Corona"],
   ["FIFA",""],
+  ["Wifi", "Internet"],
+  ["Password", "OTP"],
   ["Tax",""],
   ["Income",""],
+  ["DM", "Text"],
   ["Deer",""],
   ["Excel",""],
+  ["Crime", "Murder"],
   ["Notes",""],
   ["Rose","Valentine"],
   ["Wine","Blood"],
@@ -99,15 +119,28 @@ const WORD_PAIRS = [
   ["Tax", "GST"],
   ["Loan", "Debt"],
   ["Profit", "Revenue"],
+  ["Hero", "Villain"],
+  ["Police", ""],
+  ["TCS","Wipro"],
   ["Client", "Customer"],
+  ["Injection", ""],
   ["Team", "Group"],
   ["Roast", ""],
   ["Meme", ""],
+  ["Jail", "Prison"],
   ["Hangover", ""],
+  ["Date", "Hangout"],
   ["Crush", ""],  
-  ["Selfie", "Photo"],  
+  ["Selfie", "Photo"], 
+  ["Beer",""],
   ["Rose","Red"],
-  ["English","England"]
+  ["Tailor", ""],
+  ["English","England"],
+  ["Poison",""],
+  ["Help","Need"],
+  ["Emoji",""],
+  ["China","USA"],
+  ["Moon","Earth"]
 ];
 
 io.on("connection", (socket) => {
@@ -126,9 +159,12 @@ io.on("connection", (socket) => {
         votesByPlayer: {},
         voteCount: {},
         message: "",
-        speakingOrder: []
+        speakingOrder: [],
+        wordDeck: shuffle([...WORD_PAIRS]),
+        wordIndex: 0
       };
     }
+    
     const existingByName = rooms[room].players.find(p => p.name === name);
     if (existingByName) {
       existingByName.id = socket.id;
@@ -174,8 +210,14 @@ io.on("connection", (socket) => {
 
   room.mode = mode;
 
-  const [civilianWord, undercoverWord] =
-    WORD_PAIRS[Math.floor(Math.random() * WORD_PAIRS.length)];
+  if (room.wordIndex >= room.wordDeck.length) {
+    room.wordDeck = shuffle([...WORD_PAIRS]);
+    room.wordIndex = 0;
+  }
+
+  const [civilianWord, undercoverWord] = room.wordDeck[room.wordIndex];
+  room.wordIndex++;
+  room.currentWord = civilianWord;
 
   const undercoverIndex = Math.floor(Math.random() * room.players.length);
 
@@ -286,6 +328,44 @@ io.on("connection", (socket) => {
 
     checkVotingComplete(roomCode);
   });
+  //gusseing
+  socket.on("submitGuess", ({ guess }) => {
+  const roomCode = socket.roomCode;
+  const game = rooms[roomCode];
+  if (!game) return;
+
+  // only guessing phase allowed
+  if (game.phase !== "guessing") return;
+
+  // only eliminated undercover can guess
+  if (socket.id !== game.guessingPlayerId) return;
+
+  const correctWord = game.currentWord;
+
+  const isCorrect =
+    guess.trim().toLowerCase() ===
+    correctWord.trim().toLowerCase();
+
+  if (isCorrect) {
+    const undercover = game.players.find(p => p.id === socket.id);
+    if (undercover) undercover.score += 5;
+
+    game.message = "🕵️ Undercover guessed correctly!";
+  } else {
+    game.players
+      .filter(p => p.role === "civilian")
+      .forEach(p => p.score += 2);
+
+    game.message = "🎉 Undercover guessed wrong!";
+  }
+
+  game.phase = "ended";
+  game.isGuessingPhase = false;
+  game.guessingPlayerId = null;
+
+  io.to(roomCode).emit("state", game);
+});
+
 
   // PLAY AGAIN - host resets the whole game to lobby but keeps scores
   socket.on("play-again", (roomCode) => {
@@ -301,6 +381,8 @@ io.on("connection", (socket) => {
     }));
 
     room.phase = "lobby";
+    room.guessingPlayerId = null;
+    room.currentWord = null;
     room.votesByPlayer = {};
     room.voteCount = {};
     room.message = "Play again: waiting in lobby.";
@@ -403,7 +485,7 @@ function resolveVoting(roomCode) {
   }
 
   // 🔍 THEN check if game ends
-  const alive = game.players.filter(p => p.alive);
+  /*const alive = game.players.filter(p => p.alive);
   const undercoverAlive = alive.some(p => p.role === "undercover");
 
   if (!undercoverAlive) {
@@ -416,6 +498,46 @@ function resolveVoting(roomCode) {
     game.phase = "ended";
     game.message += " | Undercover wins !";
   } else {
+    game.phase = "playing";
+    game.votesByPlayer = {};
+    game.voteCount = {};
+  }*/
+  const alive = game.players.filter(p => p.alive);
+  const undercoverAlive = alive.some(p => p.role === "undercover");
+
+  // ⭐ IF UNDERCOVER ELIMINATED
+  if (!undercoverAlive) {
+
+    // 🔥 HARD MODE → GUESSING PHASE
+    if (game.mode === "hard") {
+      const eliminatedUndercover =
+        game.players.find(p => p.role === "undercover" && !p.alive);
+
+      game.phase = "guessing";
+      game.isGuessingPhase = true;
+      game.guessingPlayerId = eliminatedUndercover.id;
+      game.message += " | 🧠 Undercover gets one final guess!";
+
+      io.to(roomCode).emit("guessing-started", {
+        playerId: eliminatedUndercover.id
+      });
+
+      io.to(roomCode).emit("state", game);
+      return; // ⛔ STOP NORMAL FLOW
+    }
+
+    // ✅ NORMAL MODE
+    game.phase = "ended";
+    game.message += " | Civilians win!";
+  }
+  else if (alive.length <= 2) {
+    const undercover = game.players.find(p => p.role === "undercover");
+    if (undercover) undercover.score = (undercover.score ?? 0) + 5;
+
+    game.phase = "ended";
+    game.message += " | Undercover wins !";
+  }
+  else {
     game.phase = "playing";
     game.votesByPlayer = {};
     game.voteCount = {};
@@ -443,27 +565,6 @@ function resolveVoting(roomCode) {
   io.to(roomCode).emit("state", game);
 }
 
-
-/*function checkEndGame(game) {
-  if (!game) return false;
-
-  const alivePlayers = game.players.filter(p => p.alive);
-  const aliveUndercover = alivePlayers.filter(p => p.role === "undercover");
-
-  if (alivePlayers.length <= 2) {
-    if (aliveUndercover.length > 0) {
-      game.phase = "ended";
-      game.message = "🕵️ Undercover wins!";
-    } else {
-      game.phase = "ended";
-      game.message = "🎉 Civilians win!";
-    }
-    return true;
-  }
-
-  return false;
-}
-*/
 function checkEndGame(game) {
   if (!game) return false;
 
@@ -472,17 +573,17 @@ function checkEndGame(game) {
 
   // 🎯 CASE 1: Undercover eliminated → Civilians win
   if (aliveUndercover.length === 0) {
-    const civilian = game.players.find(p => p.role === "civilian");
-    if (civilian) civilian.score = (civilian.score || 0) + 5;
+    //const civilian = game.players.find(p => p.role === "civilian");
+    //if (civilian) civilian.score = (civilian.score || 0) + 5;
     game.phase = "ended";
     game.message = "🎉 Civilians win!";
 
     // 🔥 Give 1 point to civilians
-    game.players.forEach(p => {
-      if (p.role === "civilian") {
-        p.score = (p.score || 0) + 1;
-      }
-    });
+    //game.players.forEach(p => {
+      //if (p.role === "civilian") {
+        //p.score = (p.score || 0) + 1;
+      //}
+    //});
 
     return true;
   }
@@ -490,7 +591,7 @@ function checkEndGame(game) {
   // 🎯 CASE 2: 2 players left and undercover alive → Undercover wins
   if (alivePlayers.length <= 2 && aliveUndercover.length > 0) {
     const undercover = game.players.find(p => p.role === "undercover");
-    if (undercover) undercover.score = (undercover.score || 0) + 5;
+    //if (undercover) undercover.score = (undercover.score || 0) + 5;
 
     game.phase = "ended";
     game.message = "🕵️ Undercover wins!";
@@ -504,7 +605,7 @@ function checkEndGame(game) {
 }
 
 
-function determineWinner(roomCode) {
+/*function determineWinner(roomCode) {
   const game = rooms[roomCode];
   if (!game) return;
 
@@ -534,7 +635,7 @@ function determineWinner(roomCode) {
   game.votesByPlayer = {};
   game.voteCount = {};
   io.to(roomCode).emit("state", game);
-}
+}*/
 
 const PORT = process.env.PORT || 3000;
 
